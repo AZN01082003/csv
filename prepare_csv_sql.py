@@ -46,13 +46,26 @@ df_data["description_titre"] = df_data["description_titre"].astype(str).str.stri
 df_data["classe_titre"]      = df_data["classe_titre"].astype(str).str.strip()
 
 # Convert numeric columns
-for col in ["quantite_actif", "cours", "valo_titre_cv", "actif_net"]:
+for col in ["cours", "valo_titre_cv", "actif_net"]:
     df_data[col] = pd.to_numeric(
         df_data[col].astype(str).str.replace(",", ".", regex=False),
         errors="coerce",
     )
 
+# quantite_actif est toujours un entier → Int64 nullable (écrit sans ".0" dans le CSV)
+df_data["quantite_actif"] = (
+    pd.to_numeric(
+        df_data["quantite_actif"].astype(str).str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+    .round(0)
+    .astype("Int64")
+)
+
 # Convert poids: "1.2741830740926%" → 0.012741830740926
+# Attention : certaines valeurs sont très petites (ex: 0.000000474940627922239%)
+# → Python les écrit en notation scientifique (4.749e-09) que SSMS ne sait pas lire.
+# On les formate en virgule fixe avec 10 décimales pour éviter ce problème.
 df_data["poids"] = (
     df_data["poids_pct"]
     .astype(str)
@@ -61,12 +74,20 @@ df_data["poids"] = (
     .str.strip()
     .pipe(pd.to_numeric, errors="coerce")
     .div(100.0)
+    # Formater en virgule fixe (10 décimales) → évite "4.749e-09"
+    .apply(lambda x: f"{x:.10f}" if pd.notna(x) else "")
 )
 
 # Drop the raw percentage column — keep only the decimal value
 df_data = df_data.drop(columns=["poids_pct"])
 
-df_data.to_csv(BASE_DIR / "data_clean.csv", index=False, encoding="utf-8-sig")
+# float_format='%.6f' pour cours / valo / actif_net → pas de notation scientifique
+df_data.to_csv(
+    BASE_DIR / "data_clean.csv",
+    index=False,
+    encoding="utf-8-sig",
+    float_format="%.6f",
+)
 print(f"data_clean.csv      → {len(df_data)} lignes")
 
 
